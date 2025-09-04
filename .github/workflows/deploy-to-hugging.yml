@@ -13,7 +13,6 @@ jobs:
     runs-on: ubuntu-latest
     
     env:
-      # 只有 HF_TOKEN 和应用变量需要从 Secrets 读取
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
       UUID: ${{ secrets.UUID }}
       NEZHA_SERVER: ${{ secrets.NEZHA_SERVER }}
@@ -45,52 +44,72 @@ jobs:
           fetch-depth: 0
           lfs: true
 
-      - name: Recreate Hugging Face Space
+      # 关键修改：使用官方 Python 库重建 Space，不再使用 curl
+      - name: Recreate Hugging Face Space via Python
         run: |
-          HF_USER="yutian81"
-          HF_SPACE="cmedt"
-          SPACE_ID="${HF_USER}/${HF_SPACE}"
-          DELETE_API_URL="https://huggingface.co/api/spaces/${SPACE_ID}"
-          CREATE_API_URL="https://huggingface.co/api/repos/create"
-          
-          echo "--- 准备进行全新部署 ---"
-          echo "目标Space: ${SPACE_ID}"
+          # 步骤A: 安装官方库
+          pip install "huggingface_hub>=0.20.0"
 
-          echo "步骤1: 删除旧的Space (并检查结果)..."
-          DELETE_RESPONSE=$(curl -s -w "\n%{http_code}" -X DELETE -H "Authorization: Bearer ${HF_TOKEN}" "${DELETE_API_URL}")
-          DELETE_HTTP_CODE=$(echo "$DELETE_RESPONSE" | tail -n1)
-          DELETE_BODY=$(echo "$DELETE_RESPONSE" | sed '$d')
+          # 步骤B: 将健壮的Python脚本写入文件
+          cat << 'EOF' > manage_space.py
+          import os
+          import sys
+          import time
+          from huggingface_hub import HfApi
+          from huggingface_hub.utils import RepositoryNotFoundError, HfHubHTTPError
 
-          if [ "$DELETE_HTTP_CODE" -eq 200 ] || [ "$DELETE_HTTP_CODE" -eq 404 ]; then
-            echo "旧环境清理成功 (状态码: ${DELETE_HTTP_CODE})。"
-          else
-            echo "错误：删除旧Space失败！ HTTP状态码: ${DELETE_HTTP_CODE}"
-            echo "API响应: ${DELETE_BODY}"
-            echo "请确认您的 HF_TOKEN 拥有 'write' 权限！"
-            exit 1
-          fi
+          def main():
+              hf_user = "yutian81"
+              hf_space = "cmedt"
+              token = os.environ.get("HF_TOKEN")
+              repo_id = f"{hf_user}/{hf_space}"
+              
+              print(f"--- [Python脚本] 准备进行全新部署 ---")
+              print(f"--- [Python脚本] 目标Space: {repo_id}")
 
-          sleep 10
+              try:
+                  api = HfApi(token=token)
+                  print("--- [Python脚本] HfApi客户端初始化成功。")
 
-          echo "步骤2: 创建一个全新的免费版Space..."
-          JSON_PAYLOAD=$(printf '{"repoId": "%s", "repoType": "space", "private": false}' "${SPACE_ID}")
-          
-          CREATE_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
-            -H "Authorization: Bearer ${HF_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d "${JSON_PAYLOAD}" \
-            "${CREATE_API_URL}")
-          
-          HTTP_CODE=$(echo "$CREATE_RESPONSE" | tail -n1)
-          BODY=$(echo "$CREATE_RESPONSE" | sed '$d')
+                  # --- 删除操作 ---
+                  print("\n--- [Python脚本] 步骤1: 正在尝试删除旧的Space...")
+                  try:
+                      # 首先检查仓库是否存在
+                      api.repo_info(repo_id=repo_id, repo_type="space")
+                      # 如果存在，则删除
+                      print(f"--- [Python脚本] 发现已存在的Space '{repo_id}'。正在发送删除请求...")
+                      api.delete_repo(repo_id=repo_id, repo_type="space")
+                      print(f"--- [Python脚本] 删除请求已发送。等待10秒以确保后台完成操作...")
+                      time.sleep(10)
+                  except RepositoryNotFoundError:
+                      print(f"--- [Python脚本] Space '{repo_id}' 不存在，无需删除。")
+                  
+                  # --- 创建操作 ---
+                  print("\n--- [Python脚本] 步骤2: 正在创建一个全新的免费版Space...")
+                  api.create_repo(
+                      repo_id=repo_id,
+                      repo_type="space",
+                      space_sdk="docker",
+                      space_hardware="cpu-basic", # 明确指定免费硬件
+                      private=False,
+                  )
+                  print(f"--- [Python脚本] 成功创建全新的Space: {repo_id}")
 
-          if [ "$HTTP_CODE" -eq 201 ] || [ "$HTTP_CODE" -eq 200 ]; then
-            echo "成功创建全新的Space: ${SPACE_ID}"
-          else
-            echo "错误：创建Space失败！ HTTP状态码: ${HTTP_CODE}"
-            echo "API响应: ${BODY}"
-            exit 1
-          fi
+              except HfHubHTTPError as e:
+                  print(f"--- [Python脚本] 发生致命API错误！---")
+                  print(f"请立即检查您的 HF_TOKEN 是否拥有 'write' 权限，并且在HF网站上没有速率限制。")
+                  print(f"详细错误: {e}")
+                  sys.exit(1)
+              except Exception as e:
+                  print(f"--- [Python脚本] 发生未知错误: {e}")
+                  sys.exit(1)
+
+          if __name__ == "__main__":
+              main()
+          EOF
+
+          # 步骤C: 执行我们刚刚创建的Python脚本
+          python manage_space.py
 
       - name: Create README.md for Space configuration
         run: |
