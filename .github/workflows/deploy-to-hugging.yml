@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     
     env:
+      HF_USER: ${{ secrets.HF_USER }}
+      HF_SPACE: ${{ secrets.HF_SPACE }}
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
       UUID: ${{ secrets.UUID }}
       NEZHA_SERVER: ${{ secrets.NEZHA_SERVER }}
@@ -44,13 +46,10 @@ jobs:
           fetch-depth: 0
           lfs: true
 
-      # 关键修改：使用官方 Python 库重建 Space，不再使用 curl
       - name: Recreate Hugging Face Space via Python
         run: |
-          # 步骤A: 安装官方库
           pip install "huggingface_hub>=0.20.0"
 
-          # 步骤B: 将健壮的Python脚本写入文件
           cat << 'EOF' > manage_space.py
           import os
           import sys
@@ -59,9 +58,17 @@ jobs:
           from huggingface_hub.utils import RepositoryNotFoundError, HfHubHTTPError
 
           def main():
-              hf_user = "yutian81"
-              hf_space = "cmedt"
+              # 从环境变量中读取用户名和 Space 名
+              hf_user = os.environ.get("HF_USER")
+              hf_space = os.environ.get("HF_SPACE")
               token = os.environ.get("HF_TOKEN")
+              
+              # 确保机密已设置
+              if not hf_user or not hf_space or not token:
+                  print("--- [Python脚本] 错误：HF_USER, HF_SPACE, 或 HF_TOKEN 环境变量未设置！")
+                  print("--- [Python脚本] 请检查您 GitHub 仓库的 Secrets 配置。")
+                  sys.exit(1)
+              
               repo_id = f"{hf_user}/{hf_space}"
               
               print(f"--- [Python脚本] 准备进行全新部署 ---")
@@ -74,9 +81,7 @@ jobs:
                   # --- 删除操作 ---
                   print("\n--- [Python脚本] 步骤1: 正在尝试删除旧的Space...")
                   try:
-                      # 首先检查仓库是否存在
                       api.repo_info(repo_id=repo_id, repo_type="space")
-                      # 如果存在，则删除
                       print(f"--- [Python脚本] 发现已存在的Space '{repo_id}'。正在发送删除请求...")
                       api.delete_repo(repo_id=repo_id, repo_type="space")
                       print(f"--- [Python脚本] 删除请求已发送。等待10秒以确保后台完成操作...")
@@ -90,14 +95,14 @@ jobs:
                       repo_id=repo_id,
                       repo_type="space",
                       space_sdk="docker",
-                      space_hardware="cpu-basic", # 明确指定免费硬件
+                      space_hardware="cpu-basic",
                       private=False,
                   )
                   print(f"--- [Python脚本] 成功创建全新的Space: {repo_id}")
 
               except HfHubHTTPError as e:
                   print(f"--- [Python脚本] 发生致命API错误！---")
-                  print(f"请立即检查您的 HF_TOKEN 是否拥有 'write' 权限，并且在HF网站上没有速率限制。")
+                  print(f"请立即检查您的 HF_TOKEN 是否拥有 'write' 权限。")
                   print(f"详细错误: {e}")
                   sys.exit(1)
               except Exception as e:
@@ -108,12 +113,10 @@ jobs:
               main()
           EOF
 
-          # 步骤C: 执行我们刚刚创建的Python脚本
           python manage_space.py
 
       - name: Create README.md for Space configuration
         run: |
-          HF_SPACE="cmedt"
           echo "---
           title: ${HF_SPACE}
           emoji: 🚀
@@ -145,14 +148,14 @@ jobs:
           
       - name: Commit and Push to new HF Space
         run: |
-          HF_USER="yutian81"
-          HF_SPACE="cmedt"
           git config --global user.email "action@github.com"
           git config --global user.name "GitHub Action"
           git rm --cached -r .github --ignore-unmatch
           git add Dockerfile README.md
           git commit --amend --no-edit
           git lfs install
+          
+          # 此处 ${HF_USER} 和 ${HF_SPACE} 也会自动使用 env 中定义的全局变量
           REMOTE_URL="https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_USER}/${HF_SPACE}"
           git remote add space "${REMOTE_URL}"
           git push --force space HEAD:main
