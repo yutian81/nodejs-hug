@@ -4,9 +4,10 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '0 */6 * * *'
-  #push:
-  #  branches:
-  #    - main
+  push:
+    branches:
+      # 请确保这里的 main 与您要推送的分支名一致
+      - main
 
 jobs:
   deploy-and-sync:
@@ -62,11 +63,23 @@ jobs:
           sed -i "s|__SUB_PATH__|${SUB_PATH}|g" Dockerfile
           sed -i "s|__PORT__|${PORT}|g" Dockerfile
           sed -i "s|__ARGO_PORT__|${ARGO_PORT}|g" Dockerfile
+          
+          echo "--- Final Dockerfile content ---"
+          cat Dockerfile
+          echo "--------------------------------"
       
-      - name: Push to HF Space (with LFS)
+      - name: Commit and Push to HF Space
         run: |
+          # 配置 Git 用户信息
           git config --global user.email "action@github.com"
           git config --global user.name "GitHub Action"
+          
+          # 关键修改：将修改后的 Dockerfile 添加到暂存区并创建一个新的提交
+          git add Dockerfile
+          # 使用 --amend 修改最后一次提交，避免产生大量无意义的 "Inject secrets" 提交历史
+          git commit --amend --no-edit
+          
+          # 初始化 LFS 并推送到 Hugging Face
           git lfs install
           git remote add space https://user:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/yutian81/cmedt
           git push --force space HEAD:main
