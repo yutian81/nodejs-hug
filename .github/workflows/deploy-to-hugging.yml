@@ -13,7 +13,6 @@ jobs:
     runs-on: ubuntu-latest
     
     env:
-      # 从 GitHub Secrets 读取所有变量
       HF_USER: ${{ secrets.HF_USER }}
       HF_SPACE: ${{ secrets.HF_SPACE }}
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -50,13 +49,27 @@ jobs:
       - name: Recreate Hugging Face Space for a Clean Deploy
         run: |
           SPACE_ID="${HF_USER}/${HF_SPACE}"
+          DELETE_API_URL="https://huggingface.co/api/spaces/${SPACE_ID}"
+          CREATE_API_URL="https://huggingface.co/api/repos/create"
           
           echo "--- 准备进行全新部署 ---"
           echo "目标Space: ${SPACE_ID}"
 
-          echo "步骤1: 删除旧的Space (无论是否存在)..."
-          curl -X DELETE -H "Authorization: Bearer ${HF_TOKEN}" "https://huggingface.co/api/spaces/${SPACE_ID}"
-          echo "旧环境清理完成。"
+          echo "步骤1: 删除旧的Space (并检查结果)..."
+          # 关键修复：捕获删除操作的HTTP状态码
+          DELETE_RESPONSE=$(curl -s -w "\n%{http_code}" -X DELETE -H "Authorization: Bearer ${HF_TOKEN}" "${DELETE_API_URL}")
+          DELETE_HTTP_CODE=$(echo "$DELETE_RESPONSE" | tail -n1)
+          DELETE_BODY=$(echo "$DELETE_RESPONSE" | sed '$d')
+
+          # 关键修复：只有在成功(200)或本就不存在(404)时才继续
+          if [ "$DELETE_HTTP_CODE" -eq 200 ] || [ "$DELETE_HTTP_CODE" -eq 404 ]; then
+            echo "旧环境清理成功 (状态码: ${DELETE_HTTP_CODE})。"
+          else
+            echo "错误：删除旧Space失败！ HTTP状态码: ${DELETE_HTTP_CODE}"
+            echo "API响应: ${DELETE_BODY}"
+            echo "请检查您的 HF_TOKEN 是否有 'write' 权限！"
+            exit 1
+          fi
 
           sleep 10
 
@@ -64,8 +77,8 @@ jobs:
           CREATE_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
             -H "Authorization: Bearer ${HF_TOKEN}" \
             -H "Content-Type: application/json" \
-            -d "{\"repoId\":\"${SPACE_ID}\",\"private\":false,\"sdk\":\"docker\",\"hardware\":\"cpu-basic\"}" \
-            "https://huggingface.co/api/spaces")
+            -d "{\"repoId\":\"${SPACE_ID}\",\"repoType\":\"space\",\"private\":false}" \
+            "${CREATE_API_URL}")
           
           HTTP_CODE=$(echo "$CREATE_RESPONSE" | tail -n1)
           BODY=$(echo "$CREATE_RESPONSE" | sed '$d')
@@ -77,6 +90,18 @@ jobs:
             echo "API响应: ${BODY}"
             exit 1
           fi
+
+      - name: Create README.md for Space configuration
+        run: |
+          echo "---
+          title: ${HF_SPACE}
+          emoji: 🚀
+          colorFrom: blue
+          colorTo: green
+          sdk: docker
+          app_port: 3000
+          ---
+          " > README.md
 
       - name: Inject secrets into Dockerfile
         run: |
@@ -101,11 +126,10 @@ jobs:
         run: |
           git config --global user.email "action@github.com"
           git config --global user.name "GitHub Action"
-          git rm --cached -r .github 
-          git add Dockerfile
+          git rm --cached -r .github --ignore-unmatch
+          git add Dockerfile README.md
           git commit --amend --no-edit
           git lfs install
-          
           REMOTE_URL="https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_USER}/${HF_SPACE}"
           git remote add space "${REMOTE_URL}"
           git push --force space HEAD:main
