@@ -32,7 +32,6 @@ jobs:
       ARGO_PORT: ${{ secrets.ARGO_PORT }}
 
     steps:
-      # 关键修改：在 Checkout 之前安装 Git LFS
       - name: Install Git LFS
         run: |
           sudo apt-get update
@@ -41,6 +40,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: 'main'
           fetch-depth: 0
           lfs: true
 
@@ -69,4 +69,4 @@ jobs:
           git config --global user.name "GitHub Action"
           git lfs install
           git remote add space https://user:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/yutian81/cmedt
-          git push --force space hug:main
+          git push --force space HEAD:main
