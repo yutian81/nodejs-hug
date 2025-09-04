@@ -13,6 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     
     env:
+      # 只有 HF_TOKEN 和应用变量需要从 Secrets 读取
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
       UUID: ${{ secrets.UUID }}
       NEZHA_SERVER: ${{ secrets.NEZHA_SERVER }}
@@ -56,7 +57,7 @@ jobs:
           echo "目标Space: ${SPACE_ID}"
 
           echo "步骤1: 删除旧的Space (并检查结果)..."
-          DELETE_RESPONSE=$(curl -s -w "\n%{http_code}" -X DELETE -H "Authorization: Bearer ${HF_TOKEN}")
+          DELETE_RESPONSE=$(curl -s -w "\n%{http_code}" -X DELETE -H "Authorization: Bearer ${HF_TOKEN}" "${DELETE_API_URL}")
           DELETE_HTTP_CODE=$(echo "$DELETE_RESPONSE" | tail -n1)
           DELETE_BODY=$(echo "$DELETE_RESPONSE" | sed '$d')
 
@@ -72,11 +73,8 @@ jobs:
           sleep 10
 
           echo "步骤2: 创建一个全新的免费版Space..."
-          # 关键修复：使用 printf 安全地构建 JSON payload，杜绝任何格式问题
           JSON_PAYLOAD=$(printf '{"repoId": "%s", "repoType": "space", "private": false}' "${SPACE_ID}")
           
-          echo "Debug: 即将发送的 JSON Payload: ${JSON_PAYLOAD}"
-
           CREATE_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
             -H "Authorization: Bearer ${HF_TOKEN}" \
             -H "Content-Type: application/json" \
