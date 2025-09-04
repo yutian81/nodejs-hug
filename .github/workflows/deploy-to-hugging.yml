@@ -4,15 +4,17 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '0 */6 * * *'
-  #push:
-  #  branches:
-  #    - main
+  # push:
+  #   branches:
+  #     - main
 
 jobs:
   deploy-and-sync:
     runs-on: ubuntu-latest
     
     env:
+      HF_USER: yutian81
+      HF_SPACE_NAME: cmedt
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
       UUID: ${{ secrets.UUID }}
       NEZHA_SERVER: ${{ secrets.NEZHA_SERVER }}
@@ -44,6 +46,36 @@ jobs:
           fetch-depth: 0
           lfs: true
 
+      - name: Recreate Hugging Face Space for a Clean Deploy
+        run: |
+          SPACE_ID="${HF_USER}/${HF_SPACE_NAME}"
+          
+          echo "--- 准备进行全新部署 ---"
+          echo "目标Space: ${SPACE_ID}"
+
+          echo "步骤1: 删除旧的Space (无论是否存在)..."
+          curl -X DELETE -H "Authorization: Bearer ${HF_TOKEN}" "https://huggingface.co/api/spaces/${SPACE_ID}" -f
+          echo "旧环境清理完成。"
+          sleep 10
+
+          echo "步骤2: 创建一个全新的免费版Space..."
+          CREATE_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "Authorization: Bearer ${HF_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{\"repoId\":\"${SPACE_ID}\",\"private\":false,\"sdk\":\"docker\",\"hardware\":\"cpu-basic\"}" \
+            "https://huggingface.co/api/spaces")
+          
+          HTTP_CODE=$(echo "$CREATE_RESPONSE" | tail -n1)
+          BODY=$(echo "$CREATE_RESPONSE" | sed '$d')
+
+          if [ "$HTTP_CODE" -eq 201 ] || [ "$HTTP_CODE" -eq 200 ]; then
+            echo "成功创建全新的Space: ${SPACE_ID}"
+          else
+            echo "错误：创建Space失败！ HTTP状态码: ${HTTP_CODE}"
+            echo "API响应: ${BODY}"
+            exit 1
+          fi
+
       - name: Inject secrets into Dockerfile
         run: |
           sed -i "s|__UUID__|${UUID}|g" Dockerfile
@@ -63,17 +95,14 @@ jobs:
           sed -i "s|__PORT__|${PORT}|g" Dockerfile
           sed -i "s|__ARGO_PORT__|${ARGO_PORT}|g" Dockerfile
           
-          echo "--- Final Dockerfile content ---"
-          cat Dockerfile
-          echo "--------------------------------"
-      
-      - name: Commit and Push to HF Space
+      - name: Commit and Push to new HF Space
         run: |
           git config --global user.email "action@github.com"
           git config --global user.name "GitHub Action"
           git add Dockerfile
           git commit --amend --no-edit
-          # 初始化 LFS 并推送到 Hugging Face
           git lfs install
-          git remote add space https://user:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/yutian81/cmedt
+          
+          REMOTE_URL="https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_USER}/${HF_SPACE_NAME}"
+          git remote add space "${REMOTE_URL}"
           git push --force space HEAD:main
