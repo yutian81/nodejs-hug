@@ -13,6 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     
     env:
+      # 从 GitHub Secrets 读取所有变量
       HF_USER: ${{ secrets.HF_USER }}
       HF_SPACE: ${{ secrets.HF_SPACE }}
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -57,7 +58,6 @@ jobs:
           curl -X DELETE -H "Authorization: Bearer ${HF_TOKEN}" "https://huggingface.co/api/spaces/${SPACE_ID}"
           echo "旧环境清理完成。"
 
-          # 等待几秒钟，确保删除操作在Hugging Face后台完成
           sleep 10
 
           echo "步骤2: 创建一个全新的免费版Space..."
@@ -101,6 +101,7 @@ jobs:
         run: |
           git config --global user.email "action@github.com"
           git config --global user.name "GitHub Action"
+          git rm --cached -r .github 
           git add Dockerfile
           git commit --amend --no-edit
           git lfs install
