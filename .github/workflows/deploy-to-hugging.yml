@@ -13,8 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     
     env:
-      HF_USER: yutian81
-      HF_SPACE_NAME: cmedt
+      HF_USER: ${{ secrets.HF_USER }}
+      HF_SPACE: ${{ secrets.HF_SPACE }}
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
       UUID: ${{ secrets.UUID }}
       NEZHA_SERVER: ${{ secrets.NEZHA_SERVER }}
@@ -48,14 +48,16 @@ jobs:
 
       - name: Recreate Hugging Face Space for a Clean Deploy
         run: |
-          SPACE_ID="${HF_USER}/${HF_SPACE_NAME}"
+          SPACE_ID="${HF_USER}/${HF_SPACE}"
           
           echo "--- 准备进行全新部署 ---"
           echo "目标Space: ${SPACE_ID}"
 
           echo "步骤1: 删除旧的Space (无论是否存在)..."
-          curl -X DELETE -H "Authorization: Bearer ${HF_TOKEN}" "https://huggingface.co/api/spaces/${SPACE_ID}" -f
+          curl -X DELETE -H "Authorization: Bearer ${HF_TOKEN}" "https://huggingface.co/api/spaces/${SPACE_ID}"
           echo "旧环境清理完成。"
+
+          # 等待几秒钟，确保删除操作在Hugging Face后台完成
           sleep 10
 
           echo "步骤2: 创建一个全新的免费版Space..."
@@ -103,6 +105,6 @@ jobs:
           git commit --amend --no-edit
           git lfs install
           
-          REMOTE_URL="https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_USER}/${HF_SPACE_NAME}"
+          REMOTE_URL="https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_USER}/${HF_SPACE}"
           git remote add space "${REMOTE_URL}"
           git push --force space HEAD:main
