@@ -36,7 +36,6 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 // --- 核心业务逻辑 ---
 
-// 启动时清理旧的日志和订阅文件
 function initialCleanup() {
     console.log("[INIT] 正在执行初始化清理...");
     const filesToClean = [bootLogPath, subPath];
@@ -48,7 +47,6 @@ function initialCleanup() {
     });
 }
 
-// 准备并写入 xray 配置文件
 function prepareXrayConfig() {
     console.log("[XRAY] 正在准备配置文件...");
     const config = {
@@ -67,7 +65,6 @@ function prepareXrayConfig() {
     console.log(`[XRAY] 配置文件已成功写入: ${configPath}`);
 }
 
-// 准备 Argo Tunnel 配置文件 (如果需要)
 function prepareArgoConfig() {
     if (!ARGO_AUTH || !ARGO_DOMAIN || !ARGO_AUTH.includes('TunnelSecret')) {
         console.log("[ARGO] 未提供固定隧道密钥或域名，将使用临时隧道。");
@@ -95,18 +92,22 @@ ingress:
     console.log("[ARGO] 固定隧道配置文件 tunnel.yml 已生成。");
 }
 
-// 启动所有后台服务
 async function startBackgroundServices() {
     console.log("\n--- 正在启动后台服务 ---");
 
-    // 启动 Nezha Agent
+    // 注意：这里的路径是相对于 /app 的，因为二进制文件都在那里
+    const npmPath = './npm';
+    const phpPath = './php';
+    const webPath = './web';
+    const botPath = './bot';
+
     if (NEZHA_SERVER && NEZHA_KEY) {
         let nezhaCommand;
-        if (NEZHA_PORT) { // v0 agent
+        if (NEZHA_PORT) {
             const tlsPorts = ['443', '8443', '2096', '2087', '2083', '2053'];
             const nezhaTls = tlsPorts.includes(NEZHA_PORT) ? '--tls' : '';
-            nezhaCommand = `nohup ./npm -s ${NEZHA_SERVER}:${NEZHA_PORT} -p ${NEZHA_KEY} ${nezhaTls} >/dev/null 2>&1 &`;
-        } else { // v1 agent
+            nezhaCommand = `nohup ${npmPath} -s ${NEZHA_SERVER}:${NEZHA_PORT} -p ${NEZHA_KEY} ${nezhaTls} >/dev/null 2>&1 &`;
+        } else {
             const port = NEZHA_SERVER.includes(':') ? NEZHA_SERVER.split(':').pop() : '';
             const tlsPorts = new Set(['443', '8443', '2096', '2087', '2083', '2053']);
             const nezhaTls = tlsPorts.has(port) ? 'true' : 'false';
@@ -118,7 +119,7 @@ server: ${NEZHA_SERVER}
 tls: ${nezhaTls}
 uuid: ${UUID}`;
             fs.writeFileSync(path.join(FILE_PATH, 'config.yaml'), configYaml);
-            nezhaCommand = `nohup ./php -c "${path.join(FILE_PATH, 'config.yaml')}" >/dev/null 2>&1 &`;
+            nezhaCommand = `nohup ${phpPath} -c "${path.join(FILE_PATH, 'config.yaml')}" >/dev/null 2>&1 &`;
         }
         try {
             await exec(nezhaCommand);
@@ -130,15 +131,13 @@ uuid: ${UUID}`;
         console.log("[NEZHA] 未配置相关变量，跳过启动 Agent。");
     }
 
-    // 启动 xray
     try {
-        await exec(`nohup ./web -c ${configPath} >/dev/null 2>&1 &`);
+        await exec(`nohup ${webPath} -c ${configPath} >/dev/null 2>&1 &`);
         console.log("[XRAY] Xray 进程已启动。");
     } catch (error) {
         console.error(`[XRAY] Xray 启动失败: ${error}`);
     }
     
-    // 启动 Argo Tunnel
     let argoCommand;
     if (ARGO_AUTH && ARGO_DOMAIN) {
         if (ARGO_AUTH.match(/^[A-Z0-9a-z=]{120,250}$/)) {
@@ -152,25 +151,21 @@ uuid: ${UUID}`;
     }
     
     try {
-        await exec(`nohup ./bot ${argoCommand} >/dev/null 2>&1 &`);
+        await exec(`nohup ${botPath} ${argoCommand} >/dev/null 2>&1 &`);
         console.log("[ARGO] Argo Tunnel 进程已启动。");
     } catch (error) {
         console.error(`[ARGO] Argo Tunnel 启动失败: ${error}`);
     }
 }
 
-// 轮询日志文件以获取 Argo 域名 (更健壮的重试逻辑)
 async function getArgoDomain() {
     console.log("\n--- 正在获取 Argo Tunnel 域名 ---");
-
     if (ARGO_DOMAIN) {
         console.log(`[ARGO] 使用配置的固定域名: ${ARGO_DOMAIN}`);
         return ARGO_DOMAIN;
     }
-
     const maxRetries = 15;
-    const retryDelay = 2000; // 2 秒
-
+    const retryDelay = 2000;
     for (let i = 0; i < maxRetries; i++) {
         console.log(`[ARGO] 正在尝试读取日志... (第 ${i + 1} 次)`);
         if (fs.existsSync(bootLogPath)) {
@@ -184,12 +179,10 @@ async function getArgoDomain() {
         }
         await delay(retryDelay);
     }
-
     console.error("[ARGO] 错误：在 30 秒内未能获取到 Argo 临时域名！");
     return null;
 }
 
-// 生成节点链接并提供订阅服务
 async function generateAndServeLinks(argoDomain) {
     if (!argoDomain) {
         console.error("无法生成节点链接，因为没有获取到 Argo 域名。");
@@ -225,14 +218,11 @@ trojan://${UUID}@${CFIP}:${CFPORT}?security=tls&sni=${argoDomain}&type=ws&host=$
     return subContent.split('\n').filter(Boolean);
 }
 
-// 上传节点或订阅到服务器
 async function uploadData(nodes) {
     if (!UPLOAD_URL || !nodes || nodes.length === 0) {
-        // console.log("[UPLOAD] 未配置 UPLOAD_URL 或没有节点，跳过上传。");
         return;
     }
     console.log("\n--- 正在上传数据到订阅器 ---");
-
     try {
         if (PROJECT_URL) {
             console.log("[UPLOAD] 正在上传订阅地址...");
@@ -254,10 +244,8 @@ async function uploadData(nodes) {
     }
 }
 
-// 添加自动保活任务
 async function addKeepAliveTask() {
     if (!AUTO_ACCESS || !PROJECT_URL) {
-        // console.log("[KEEPALIVE] 未开启自动保活或未提供项目URL，跳过。");
         return;
     }
     console.log("\n--- 正在添加自动保活任务 ---");
@@ -275,9 +263,9 @@ async function main() {
     if (!fs.existsSync(FILE_PATH)) {
         fs.mkdirSync(FILE_PATH, { recursive: true });
     }
-    // 切换到运行目录
-    process.chdir(FILE_PATH);
     
+    // 关键修复：移除了错误的 `process.chdir()` 调用
+
     initialCleanup();
     prepareXrayConfig();
     prepareArgoConfig();
