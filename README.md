@@ -1,2 +1,9 @@
-# nodejs-hug
-自动推送nodejs代理部署到hug
+---
+title: nodejs for hug
+emoji: 🚀
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 3000
+license: mit
+---
