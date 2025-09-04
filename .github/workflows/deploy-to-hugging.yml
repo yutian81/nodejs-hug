@@ -1,0 +1,72 @@
+name: Deploy to Hugging Face
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */6 * * *'
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy-and-sync:
+    runs-on: ubuntu-latest
+    
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      UUID: ${{ secrets.UUID }}
+      NEZHA_SERVER: ${{ secrets.NEZHA_SERVER }}
+      NEZHA_PORT: ${{ secrets.NEZHA_PORT }}
+      NEZHA_KEY: ${{ secrets.NEZHA_KEY }}
+      ARGO_DOMAIN: ${{ secrets.ARGO_DOMAIN }}
+      ARGO_AUTH: ${{ secrets.ARGO_AUTH }}
+      CFIP: ${{ secrets.CFIP }}
+      CFPORT: ${{ secrets.CFPORT }}
+      NAME: ${{ secrets.NAME }}
+      UPLOAD_URL: ${{ secrets.UPLOAD_URL }}
+      PROJECT_URL: ${{ secrets.PROJECT_URL }}
+      AUTO_ACCESS: ${{ secrets.AUTO_ACCESS }}
+      FILE_PATH: ${{ secrets.FILE_PATH }}
+      SUB_PATH: ${{ secrets.SUB_PATH }}
+      PORT: ${{ secrets.PORT }}
+      ARGO_PORT: ${{ secrets.ARGO_PORT }}
+
+    steps:
+      # 关键修改：在 Checkout 之前安装 Git LFS
+      - name: Install Git LFS
+        run: |
+          sudo apt-get update
+          sudo apt-get install git-lfs -y
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: true
+
+      - name: Inject secrets into Dockerfile
+        run: |
+          sed -i "s|__UUID__|${UUID}|g" Dockerfile
+          sed -i "s|__NEZHA_SERVER__|${NEZHA_SERVER}|g" Dockerfile
+          sed -i "s|__NEZHA_PORT__|${NEZHA_PORT}|g" Dockerfile
+          sed -i "s|__NEZHA_KEY__|${NEZHA_KEY}|g" Dockerfile
+          sed -i "s|__ARGO_DOMAIN__|${ARGO_DOMAIN}|g" Dockerfile
+          sed -i "s|__ARGO_AUTH__|${ARGO_AUTH}|g" Dockerfile
+          sed -i "s|__CFIP__|${CFIP}|g" Dockerfile
+          sed -i "s|__CFPORT__|${CFPORT}|g" Dockerfile
+          sed -i "s|__NAME__|${NAME}|g" Dockerfile
+          sed -i "s|__UPLOAD_URL__|${UPLOAD_URL}|g" Dockerfile
+          sed -i "s|__PROJECT_URL__|${PROJECT_URL}|g" Dockerfile
+          sed -i "s|__AUTO_ACCESS__|${AUTO_ACCESS}|g" Dockerfile
+          sed -i "s|__FILE_PATH__|${FILE_PATH}|g" Dockerfile
+          sed -i "s|__SUB_PATH__|${SUB_PATH}|g" Dockerfile
+          sed -i "s|__PORT__|${PORT}|g" Dockerfile
+          sed -i "s|__ARGO_PORT__|${ARGO_PORT}|g" Dockerfile
+      
+      - name: Push to HF Space (with LFS)
+        run: |
+          git config --global user.email "action@github.com"
+          git config --global user.name "GitHub Action"
+          git lfs install
+          git remote add space https://user:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/yutian81/cmedt
+          git push --force space hug:main
