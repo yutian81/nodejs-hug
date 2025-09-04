@@ -263,8 +263,6 @@ async function main() {
     if (!fs.existsSync(FILE_PATH)) {
         fs.mkdirSync(FILE_PATH, { recursive: true });
     }
-    
-    // 关键修复：移除了错误的 `process.chdir()` 调用
 
     initialCleanup();
     prepareXrayConfig();
@@ -282,7 +280,7 @@ async function main() {
 }
 
 // --- 程序入口 ---
-app.get("/", (req, res) => res.send("Hello, this is the application index."));
+app.get("/", (req, res) => res.send("Hello, world."));
 app.listen(PORT, () => {
     console.log(`HTTP 服务器已在端口 ${PORT} 上启动。`);
     main().catch(err => {
