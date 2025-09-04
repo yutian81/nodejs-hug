@@ -13,8 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     
     env:
-      HF_USER: ${{ secrets.HF_USER }}
-      HF_SPACE: ${{ secrets.HF_SPACE }}
+      HF_USER: yutian81
+      HF_SPACE: cmedt
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
       UUID: ${{ secrets.UUID }}
       NEZHA_SERVER: ${{ secrets.NEZHA_SERVER }}
@@ -34,20 +34,14 @@ jobs:
       ARGO_PORT: ${{ secrets.ARGO_PORT }}
 
     steps:
-      # 新增：飞行前检查，这是最关键的一步
-      - name: Pre-flight Check - Verify Secrets
+      - name: Verify HF_TOKEN
         run: |
-          echo "--- 正在验证关键配置 ---"
-          if [ -z "${HF_USER}" ] || [ -z "${HF_SPACE}" ] || [ -z "${HF_TOKEN}" ]; then
-            echo "错误：一个或多个关键机密未在 GitHub 中正确设置！"
+          if [ -z "${HF_TOKEN}" ]; then
+            echo "HF_TOKEN 未在 GitHub 中正确设置！"
             echo "请立即检查您仓库的 'Settings' -> 'Secrets and variables' -> 'Actions' 页面。"
-            # 使用不会被屏蔽的方式打印状态
-            echo "HF_USER 状态: [${HF_USER:+设置成功}] [${HF_USER:-未设置或为空}]"
-            echo "HF_SPACE 状态: [${HF_SPACE:+设置成功}] [${HF_SPACE:-未设置或为空}]"
-            echo "HF_TOKEN 状态: [${HF_TOKEN:+设置成功}] [${HF_TOKEN:-未设置或为空}]"
             exit 1
           else
-            echo "所有关键机密 (HF_USER, HF_SPACE, HF_TOKEN) 都已成功读取。"
+            echo "HF_TOKEN 已成功读取。"
           fi
 
       - name: Install Git LFS
