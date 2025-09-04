@@ -155,7 +155,6 @@ jobs:
           git commit --amend --no-edit
           git lfs install
           
-          # 此处 ${HF_USER} 和 ${HF_SPACE} 也会自动使用 env 中定义的全局变量
           REMOTE_URL="https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_USER}/${HF_SPACE}"
           git remote add space "${REMOTE_URL}"
           git push --force space HEAD:main
