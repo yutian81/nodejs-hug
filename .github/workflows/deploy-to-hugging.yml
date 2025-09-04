@@ -48,6 +48,13 @@ jobs:
 
       - name: Recreate Hugging Face Space for a Clean Deploy
         run: |
+          if [ -z "${HF_USER}" ] || [ -z "${HF_SPACE}" ]; then
+            echo "错误：HF_USER 或 HF_SPACE 机密未在 GitHub 仓库中设置！"
+            echo "请进入您仓库的 'Settings' -> 'Secrets and variables' -> 'Actions' 页面，"
+            echo "并确保 HF_USER 和 HF_SPACE 这两个机密都已创建且包含正确的值。"
+            exit 1
+          fi
+          
           SPACE_ID="${HF_USER}/${HF_SPACE}"
           DELETE_API_URL="https://huggingface.co/api/spaces/${SPACE_ID}"
           CREATE_API_URL="https://huggingface.co/api/repos/create"
@@ -56,12 +63,11 @@ jobs:
           echo "目标Space: ${SPACE_ID}"
 
           echo "步骤1: 删除旧的Space (并检查结果)..."
-          # 关键修复：捕获删除操作的HTTP状态码
           DELETE_RESPONSE=$(curl -s -w "\n%{http_code}" -X DELETE -H "Authorization: Bearer ${HF_TOKEN}" "${DELETE_API_URL}")
           DELETE_HTTP_CODE=$(echo "$DELETE_RESPONSE" | tail -n1)
           DELETE_BODY=$(echo "$DELETE_RESPONSE" | sed '$d')
 
-          # 关键修复：只有在成功(200)或本就不存在(404)时才继续
+          # 只有在成功(200)或本就不存在(404)时才继续
           if [ "$DELETE_HTTP_CODE" -eq 200 ] || [ "$DELETE_HTTP_CODE" -eq 404 ]; then
             echo "旧环境清理成功 (状态码: ${DELETE_HTTP_CODE})。"
           else
